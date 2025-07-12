@@ -1401,6 +1401,7 @@ pub fn definesFromTransformOptions(
     framework_env: ?*const Env,
     NODE_ENV: ?string,
     drop: []const []const u8,
+    omit_unused_global_calls: bool,
 ) !*defines.Define {
     const input_user_define = maybe_input_define orelse std.mem.zeroes(Api.StringMap);
 
@@ -1483,11 +1484,11 @@ pub fn definesFromTransformOptions(
 
     if (target.isBun()) {
         if (!user_defines.contains("window")) {
-            _ = try environment_defines.getOrPutValue("window", .{
+            _ = try environment_defines.getOrPutValue("window", .init(.{
                 .valueless = true,
                 .original_name = "window",
                 .value = .{ .e_undefined = .{} },
-            });
+            }));
         }
     }
 
@@ -1502,6 +1503,7 @@ pub fn definesFromTransformOptions(
         resolved_defines,
         environment_defines,
         drop_debugger,
+        omit_unused_global_calls,
     );
 }
 
@@ -1863,6 +1865,7 @@ pub const BundleOptions = struct {
                 break :node_env "\"development\"";
             },
             this.drop,
+            this.dead_code_elimination and this.minify_syntax,
         );
         this.defines_loaded = true;
     }
@@ -2541,6 +2544,7 @@ pub const PathTemplate = struct {
                         try writer.print("{any}", .{bun.fmt.truncatedHash32(hash)});
                     }
                 },
+                .target => try writeReplacingSlashesOnWindows(writer, self.placeholder.target),
             }
             remain = remain[end_len + 1 ..];
         }
@@ -2553,12 +2557,14 @@ pub const PathTemplate = struct {
         name: []const u8 = "",
         ext: []const u8 = "",
         hash: ?u64 = null,
+        target: []const u8 = "",
 
         pub const map = bun.ComptimeStringMap(std.meta.FieldEnum(Placeholder), .{
             .{ "dir", .dir },
             .{ "name", .name },
             .{ "ext", .ext },
             .{ "hash", .hash },
+            .{ "target", .target },
         });
     };
 
@@ -2571,13 +2577,32 @@ pub const PathTemplate = struct {
         },
     };
 
+    pub const chunkWithTarget = PathTemplate{
+        .data = "[dir]/[target]/chunk-[hash].[ext]",
+        .placeholder = .{
+            .name = "chunk",
+            .ext = "js",
+            .dir = "",
+        },
+    };
+
     pub const file = PathTemplate{
         .data = "[dir]/[name].[ext]",
         .placeholder = .{},
     };
 
+    pub const fileWithTarget = PathTemplate{
+        .data = "[dir]/[target]/[name].[ext]",
+        .placeholder = .{},
+    };
+
     pub const asset = PathTemplate{
         .data = "./[name]-[hash].[ext]",
+        .placeholder = .{},
+    };
+
+    pub const assetWithTarget = PathTemplate{
+        .data = "[dir]/[target]/[name]-[hash].[ext]",
         .placeholder = .{},
     };
 };
